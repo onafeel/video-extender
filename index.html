@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>動画引き伸ばしアプリ</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f5f7;
+    --card: #ffffff;
+    --text: #1d1d1f;
+    --muted: #6e6e73;
+    --accent: #0071e3;
+    --accent-hover: #005bb5;
+    --border: #d2d2d7;
+    --danger: #e02020;
+    --warn: #b36b00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c1e;
+      --card: #2c2c2e;
+      --text: #f5f5f7;
+      --muted: #9a9a9e;
+      --border: #48484a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 24px 16px 80px;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0 0 24px; }
+
+  .card {
+    background: var(--card);
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 16px;
+    border: 1px solid var(--border);
+  }
+
+  .picker {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 28px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s;
+  }
+  .picker:hover { border-color: var(--accent); }
+  .picker input { display: none; }
+  .picker p { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+  .picker .icon { font-size: 32px; }
+
+  .preview-wrap { display: none; margin-top: 16px; }
+  .preview-wrap.active { display: block; }
+  .preview-wrap video {
+    width: 100%;
+    border-radius: 12px;
+    background: #000;
+    display: block;
+  }
+
+  .dual-range {
+    position: relative;
+    height: 32px;
+    margin-top: 14px;
+  }
+  .dual-range .track {
+    position: absolute;
+    top: 14px; left: 0; right: 0;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border);
+  }
+  .dual-range .fill {
+    position: absolute;
+    top: 14px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--accent);
+  }
+  .dual-range input[type="range"] {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    margin: 0;
+    background: transparent;
+    -webkit-appearance: none;
+    appearance: none;
+    pointer-events: none;
+  }
+  .dual-range input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    pointer-events: auto;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--card);
+    box-shadow: 0 1px 3px rgba(0,0,0,.3);
+    cursor: grab;
+    margin-top: 6px;
+  }
+  .dual-range input[type="range"]::-moz-range-thumb {
+    pointer-events: auto;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--card);
+    cursor: grab;
+  }
+  .dual-range input[type="range"]::-webkit-slider-runnable-track { background: transparent; }
+  .dual-range input[type="range"]::-moz-range-track { background: transparent; }
+
+  .range-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+  .range-labels .seg { font-weight: 600; color: var(--text); }
+
+  .target-picker, .bgm-picker {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .target-picker label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    display: block;
+    margin-bottom: 8px;
+  }
+  .target-input {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .target-input input {
+    width: 90px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    text-align: right;
+  }
+
+  .bgm-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .bgm-options {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .bgm-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .bgm-option input { accent-color: var(--accent); }
+  .bgm-option span { flex: 1; }
+  .bgm-option .preview {
+    border: none;
+    background: var(--border);
+    color: var(--text);
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 11px;
+    line-height: 1;
+  }
+  .bgm-option .preview:hover { background: var(--accent); color: #fff; }
+  .bgm-hint {
+    font-size: 12px;
+    color: var(--muted);
+    margin: 8px 0 0;
+    line-height: 1.6;
+  }
+
+  button.primary {
+    width: 100%;
+    padding: 14px;
+    border-radius: 12px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 16px;
+  }
+  button.primary:disabled {
+    background: var(--border);
+    color: var(--muted);
+    cursor: not-allowed;
+  }
+  button.primary:not(:disabled):hover { background: var(--accent-hover); }
+
+  .progress-wrap { margin-top: 16px; display: none; }
+  .progress-wrap.active { display: block; }
+  .progress-label { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .bar {
+    height: 8px;
+    border-radius: 4px;
+    background: var(--border);
+    overflow: hidden;
+  }
+  .bar > div {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    transition: width .2s;
+  }
+
+  .result { display: none; margin-top: 16px; }
+  .result.active { display: block; }
+  .result video { width: 100%; border-radius: 12px; background: #000; }
+  .result a.download {
+    display: block;
+    text-align: center;
+    margin-top: 12px;
+    padding: 12px;
+    border-radius: 12px;
+    background: var(--text);
+    color: var(--bg);
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 14px;
+  }
+
+  .note {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 10px;
+    line-height: 1.6;
+  }
+  .status-line {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 10px;
+    min-height: 18px;
+  }
+  .status-line.error { color: var(--danger); }
+
+  details.log { margin-top: 10px; }
+  details.log summary {
+    font-size: 12px;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  details.log pre {
+    font-size: 11px;
+    background: #00000010;
+    padding: 8px;
+    border-radius: 8px;
+    max-height: 160px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>動画引き伸ばしアプリ</h1>
+  <p class="sub">短い動画の一部区間をループさせて、好きな長さまで引き伸ばします。BGMも付けられます。すべての処理はブラウザ内で完結し、動画はどこにも送信されません。</p>
+
+  <div class="card">
+    <label class="picker" id="picker">
+      <div class="icon">🎬</div>
+      <div>動画を選択</div>
+      <p>タップしてカメラロールやファイルから選択</p>
+      <input type="file" id="fileInput" accept="video/*" />
+    </label>
+
+    <div class="preview-wrap" id="previewWrap">
+      <video id="previewVideo" muted playsinline></video>
+
+      <div class="dual-range">
+        <div class="track"></div>
+        <div class="fill" id="rangeFill"></div>
+        <input type="range" id="rangeStart" min="0" max="0" step="0.1" value="0" />
+        <input type="range" id="rangeEnd" min="0" max="0" step="0.1" value="0" />
+      </div>
+      <div class="range-labels">
+        <span id="startLabel">0.0秒</span>
+        <span class="seg" id="segLabel">区間: 0.0秒</span>
+        <span id="endLabel">0.0秒</span>
+      </div>
+
+      <div class="target-picker">
+        <label for="targetInput">引き伸ばし後の長さ</label>
+        <div class="target-input">
+          <input type="number" id="targetInput" value="180" min="1" step="1" />
+          <span>秒（3分=180、15分=900）</span>
+        </div>
+      </div>
+
+      <div class="bgm-picker" id="bgmPicker">
+        <div class="bgm-label">BGM</div>
+        <div class="bgm-options">
+          <label class="bgm-option">
+            <input type="radio" name="bgm" value="" checked />
+            <span>元の音声のまま（区間の音声もループ）</span>
+          </label>
+          <label class="bgm-option">
+            <input type="radio" name="bgm" value="calm" />
+            <span>Calm（穏やか）</span>
+            <button type="button" class="preview" data-src="bgm/calm.mp3">▶</button>
+          </label>
+          <label class="bgm-option">
+            <input type="radio" name="bgm" value="upbeat" />
+            <span>Upbeat（軽快）</span>
+            <button type="button" class="preview" data-src="bgm/upbeat.mp3">▶</button>
+          </label>
+          <label class="bgm-option">
+            <input type="radio" name="bgm" value="cinematic" />
+            <span>Cinematic（壮大）</span>
+            <button type="button" class="preview" data-src="bgm/cinematic.mp3">▶</button>
+          </label>
+        </div>
+        <p class="bgm-hint">BGMを選ぶと、元の音声は削除されBGMに差し替わります（BGMも引き伸ばし後の長さに合わせてループ再生されます）</p>
+      </div>
+
+      <button class="primary" id="combineBtn">引き伸ばす</button>
+    </div>
+
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-label">
+        <span id="progressLabel">準備中…</span>
+        <span id="progressPct">0%</span>
+      </div>
+      <div class="bar"><div id="progressBar"></div></div>
+    </div>
+
+    <div class="status-line" id="statusLine"></div>
+    <details class="log" id="logDetails">
+      <summary>詳細ログ</summary>
+      <pre id="logPre"></pre>
+    </details>
+
+    <div class="result" id="result">
+      <video id="resultVideo" controls playsinline></video>
+      <a class="download" id="downloadLink" download="extended.mp4">動画を保存</a>
+    </div>
+
+    <p class="note">
+      ・スライダーでループしたい区間（左右に揺れる動きなど、繋ぎ目が目立たない部分）を選んでください<br>
+      ・区間の長さが引き伸ばし後の長さより長い場合は、区間の先頭部分だけが使われます
+    </p>
+  </div>
+</div>
+
+<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
+<script type="module">
+const { FFmpeg } = window.FFmpegWASM;
+import { fetchFile, toBlobURL } from "https://esm.sh/@ffmpeg/util@0.12.1";
+
+const fileInput = document.getElementById("fileInput");
+const previewWrap = document.getElementById("previewWrap");
+const previewVideo = document.getElementById("previewVideo");
+const rangeStart = document.getElementById("rangeStart");
+const rangeEnd = document.getElementById("rangeEnd");
+const rangeFill = document.getElementById("rangeFill");
+const startLabel = document.getElementById("startLabel");
+const endLabel = document.getElementById("endLabel");
+const segLabel = document.getElementById("segLabel");
+const targetInput = document.getElementById("targetInput");
+const combineBtn = document.getElementById("combineBtn");
+const progressWrap = document.getElementById("progressWrap");
+const progressBar = document.getElementById("progressBar");
+const progressPct = document.getElementById("progressPct");
+const progressLabel = document.getElementById("progressLabel");
+const statusLine = document.getElementById("statusLine");
+const logPre = document.getElementById("logPre");
+const resultEl = document.getElementById("result");
+const resultVideo = document.getElementById("resultVideo");
+const downloadLink = document.getElementById("downloadLink");
+
+let sourceFile = null;
+let ffmpeg = null;
+let ffmpegLoaded = false;
+
+function setStatus(msg, isError = false) {
+  statusLine.textContent = msg;
+  statusLine.classList.toggle("error", isError);
+}
+function appendLog(line) {
+  logPre.textContent += line + "\n";
+  logPre.scrollTop = logPre.scrollHeight;
+}
+function fmt(sec) {
+  return sec.toFixed(1) + "秒";
+}
+
+function updateRangeUI() {
+  const max = Number(rangeStart.max) || 0;
+  const s = Math.min(Number(rangeStart.value), Number(rangeEnd.value));
+  const e = Math.max(Number(rangeStart.value), Number(rangeEnd.value));
+  startLabel.textContent = fmt(s);
+  endLabel.textContent = fmt(e);
+  segLabel.textContent = `区間: ${fmt(e - s)}`;
+  if (max > 0) {
+    rangeFill.style.left = (s / max * 100) + "%";
+    rangeFill.style.width = ((e - s) / max * 100) + "%";
+  }
+}
+
+// keep a minimum 0.5s gap between the two handles, native dual-range-slider technique
+rangeStart.addEventListener("input", () => {
+  if (Number(rangeStart.value) > Number(rangeEnd.value) - 0.5) {
+    rangeStart.value = Math.max(0, Number(rangeEnd.value) - 0.5);
+  }
+  previewVideo.currentTime = Number(rangeStart.value);
+  updateRangeUI();
+});
+rangeEnd.addEventListener("input", () => {
+  if (Number(rangeEnd.value) < Number(rangeStart.value) + 0.5) {
+    rangeEnd.value = Math.min(Number(rangeEnd.max), Number(rangeStart.value) + 0.5);
+  }
+  previewVideo.currentTime = Number(rangeEnd.value);
+  updateRangeUI();
+});
+
+fileInput.addEventListener("change", () => {
+  const file = fileInput.files[0];
+  if (!file) return;
+  sourceFile = file;
+  const url = URL.createObjectURL(file);
+  previewVideo.src = url;
+  previewVideo.addEventListener(
+    "loadedmetadata",
+    () => {
+      const dur = previewVideo.duration;
+      rangeStart.max = dur;
+      rangeEnd.max = dur;
+      rangeStart.value = 0;
+      rangeEnd.value = dur;
+      updateRangeUI();
+      previewWrap.classList.add("active");
+    },
+    { once: true }
+  );
+});
+
+let previewAudio = null;
+let previewBtnPlaying = null;
+document.querySelectorAll(".bgm-option .preview").forEach((btn) => {
+  btn.addEventListener("click", (e) => {
+    e.preventDefault();
+    const src = btn.dataset.src;
+    if (previewAudio && previewBtnPlaying === btn) {
+      previewAudio.pause();
+      previewAudio = null;
+      previewBtnPlaying = null;
+      btn.textContent = "▶";
+      return;
+    }
+    if (previewAudio) {
+      previewAudio.pause();
+      if (previewBtnPlaying) previewBtnPlaying.textContent = "▶";
+    }
+    previewAudio = new Audio(src);
+    previewAudio.loop = true;
+    previewAudio.play();
+    previewBtnPlaying = btn;
+    btn.textContent = "■";
+    previewAudio.addEventListener("ended", () => {
+      btn.textContent = "▶";
+      previewAudio = null;
+      previewBtnPlaying = null;
+    });
+  });
+});
+
+async function ensureFFmpeg() {
+  if (ffmpegLoaded) return;
+  ffmpeg = new FFmpeg();
+  ffmpeg.on("log", ({ message }) => appendLog(message));
+  ffmpeg.on("progress", ({ progress }) => {
+    const pct = Math.min(100, Math.max(0, Math.round(progress * 100)));
+    progressBar.style.width = pct + "%";
+    progressPct.textContent = pct + "%";
+  });
+  progressLabel.textContent = "エンジンを読み込み中…（初回のみ数十秒かかります）";
+  progressWrap.classList.add("active");
+  const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm";
+  const workerChunkURL = "https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/814.ffmpeg.js";
+  await ffmpeg.load({
+    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
+    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
+    classWorkerURL: await toBlobURL(workerChunkURL, "text/javascript"),
+  });
+  ffmpegLoaded = true;
+}
+
+async function hasAudioStream(filename) {
+  const before = logPre.textContent.length;
+  try {
+    await ffmpeg.exec(["-i", filename]);
+  } catch {}
+  return /Stream #\d+:\d+.*Audio:/.test(logPre.textContent.slice(before));
+}
+
+combineBtn.addEventListener("click", async () => {
+  const start = Math.min(Number(rangeStart.value), Number(rangeEnd.value));
+  const end = Math.max(Number(rangeStart.value), Number(rangeEnd.value));
+  const segDur = end - start;
+  const target = Math.max(1, Math.floor(Number(targetInput.value) || 0));
+  const bgmName = document.querySelector('input[name="bgm"]:checked').value || null;
+
+  if (segDur < 0.5) {
+    setStatus("区間が短すぎます（0.5秒以上にしてください）", true);
+    return;
+  }
+
+  combineBtn.disabled = true;
+  resultEl.classList.remove("active");
+  logPre.textContent = "";
+  progressBar.style.width = "0%";
+  progressPct.textContent = "0%";
+  setStatus("");
+
+  try {
+    await ensureFFmpeg();
+    progressWrap.classList.add("active");
+
+    const data = await fetchFile(sourceFile);
+    await ffmpeg.writeFile("input.mp4", data);
+
+    progressLabel.textContent = "区間を抜き出し中…";
+    await ffmpeg.exec([
+      "-ss", String(start),
+      "-t", String(segDur),
+      "-i", "input.mp4",
+      "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
+      "-c:a", "aac", "-b:a", "160k",
+      "segment.mp4",
+    ]);
+
+    progressLabel.textContent = "引き伸ばし中…";
+    if (bgmName) {
+      const bgmData = await fetchFile(`bgm/${bgmName}.mp3`);
+      await ffmpeg.writeFile("bgm.mp3", bgmData);
+      await ffmpeg.exec([
+        "-stream_loop", "-1", "-i", "segment.mp4",
+        "-stream_loop", "-1", "-i", "bgm.mp3",
+        "-t", String(target),
+        "-map", "0:v", "-map", "1:a",
+        "-c:v", "copy",
+        "-c:a", "aac", "-b:a", "160k",
+        "output.mp4",
+      ]);
+    } else {
+      const segHasAudio = await hasAudioStream("segment.mp4");
+      const args = ["-stream_loop", "-1", "-i", "segment.mp4", "-t", String(target), "-map", "0:v"];
+      if (segHasAudio) args.push("-map", "0:a");
+      args.push("-c", "copy", "output.mp4");
+      await ffmpeg.exec(args);
+    }
+
+    const outData = await ffmpeg.readFile("output.mp4");
+    const blob = new Blob([outData.buffer], { type: "video/mp4" });
+    const url = URL.createObjectURL(blob);
+    resultVideo.src = url;
+    downloadLink.href = url;
+    resultEl.classList.add("active");
+    progressLabel.textContent = "完了";
+    progressBar.style.width = "100%";
+    progressPct.textContent = "100%";
+  } catch (err) {
+    console.error(err);
+    setStatus("処理に失敗しました: " + err.message, true);
+  } finally {
+    combineBtn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
