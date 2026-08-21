@@ -313,6 +313,11 @@
         <span id="endLabel">0.0秒</span>
       </div>
 
+      <label class="bgm-option" style="margin-top: 10px;">
+        <input type="checkbox" id="keepIntroToggle" />
+        <span>冒頭（0秒〜区間開始）を残す（ループさせず先頭に1回だけ使う）</span>
+      </label>
+
       <div class="target-picker">
         <label for="targetInput">引き伸ばし後の長さ</label>
         <div class="target-input">
@@ -342,6 +347,11 @@
             <input type="radio" name="bgm" value="cinematic" />
             <span>Cinematic（壮大）</span>
             <button type="button" class="preview" data-src="bgm/cinematic.mp3">▶</button>
+          </label>
+          <label class="bgm-option">
+            <input type="radio" name="bgm" value="custom" />
+            <span>mp3をアップロード</span>
+            <input type="file" id="customBgmInput" accept="audio/*" style="display:none;" />
           </label>
         </div>
         <p class="bgm-hint">BGMを選ぶと、元の音声は削除されBGMに差し替わります（BGMも引き伸ばし後の長さに合わせてループ再生されます）</p>
@@ -391,6 +401,7 @@ const startLabel = document.getElementById("startLabel");
 const endLabel = document.getElementById("endLabel");
 const segLabel = document.getElementById("segLabel");
 const targetInput = document.getElementById("targetInput");
+const keepIntroToggle = document.getElementById("keepIntroToggle");
 const combineBtn = document.getElementById("combineBtn");
 const progressWrap = document.getElementById("progressWrap");
 const progressBar = document.getElementById("progressBar");
@@ -498,6 +509,20 @@ document.querySelectorAll(".bgm-option .preview").forEach((btn) => {
   });
 });
 
+const customBgmInput = document.getElementById("customBgmInput");
+const customBgmRadio = document.querySelector('input[name="bgm"][value="custom"]');
+let customBgmFile = null;
+customBgmRadio.addEventListener("change", () => {
+  if (customBgmRadio.checked && !customBgmFile) customBgmInput.click();
+});
+customBgmInput.addEventListener("click", (e) => e.stopPropagation());
+customBgmInput.addEventListener("change", () => {
+  customBgmFile = customBgmInput.files[0] || null;
+  const label = customBgmRadio.closest(".bgm-option").querySelector("span");
+  label.textContent = customBgmFile ? `mp3: ${customBgmFile.name}` : "mp3をアップロード";
+  if (customBgmFile) customBgmRadio.checked = true;
+});
+
 async function ensureFFmpeg() {
   if (ffmpegLoaded) return;
   ffmpeg = new FFmpeg();
@@ -527,15 +552,38 @@ async function hasAudioStream(filename) {
   return /Stream #\d+:\d+.*Audio:/.test(logPre.textContent.slice(before));
 }
 
+// trims [ss, ss+dur) from srcName into outName, keeping audio only if withAudio
+async function extractTrim(srcName, outName, ss, dur, withAudio) {
+  const args = ["-ss", String(ss), "-t", String(dur), "-i", srcName,
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p"];
+  args.push(...(withAudio ? ["-c:a", "aac", "-b:a", "160k"] : ["-an"]));
+  args.push(outName);
+  await ffmpeg.exec(args);
+}
+
+// repeats srcName (via stream_loop, near-instant since it's a plain copy) to fill dur seconds
+async function loopToTarget(srcName, outName, dur, withAudio) {
+  const args = ["-stream_loop", "-1", "-i", srcName, "-t", String(dur), "-map", "0:v"];
+  if (withAudio) args.push("-map", "0:a");
+  args.push("-c", "copy", outName);
+  await ffmpeg.exec(args);
+}
+
 combineBtn.addEventListener("click", async () => {
   const start = Math.min(Number(rangeStart.value), Number(rangeEnd.value));
   const end = Math.max(Number(rangeStart.value), Number(rangeEnd.value));
   const segDur = end - start;
   const target = Math.max(1, Math.floor(Number(targetInput.value) || 0));
   const bgmName = document.querySelector('input[name="bgm"]:checked').value || null;
+  const keepIntro = keepIntroToggle.checked;
+  const introDur = keepIntro ? start : 0;
 
   if (segDur < 0.5) {
     setStatus("区間が短すぎます（0.5秒以上にしてください）", true);
+    return;
+  }
+  if (bgmName === "custom" && !customBgmFile) {
+    setStatus("BGM用のmp3ファイルを選択してください", true);
     return;
   }
 
@@ -553,22 +601,44 @@ combineBtn.addEventListener("click", async () => {
     const data = await fetchFile(sourceFile);
     await ffmpeg.writeFile("input.mp4", data);
 
-    progressLabel.textContent = "区間を抜き出し中…";
-    await ffmpeg.exec([
-      "-ss", String(start),
-      "-t", String(segDur),
-      "-i", "input.mp4",
-      "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
-      "-c:a", "aac", "-b:a", "160k",
-      "segment.mp4",
-    ]);
+    const useBgm = !!bgmName;
+    let fullVideoName;
 
-    progressLabel.textContent = "引き伸ばし中…";
-    if (bgmName) {
-      const bgmData = await fetchFile(`bgm/${bgmName}.mp3`);
+    if (keepIntro && introDur >= target) {
+      // intro alone already covers (or exceeds) the target length
+      progressLabel.textContent = "書き出し中…";
+      await extractTrim("input.mp4", "fullvideo.mp4", 0, target, !useBgm);
+      fullVideoName = "fullvideo.mp4";
+    } else if (!keepIntro) {
+      progressLabel.textContent = "区間を抜き出し中…";
+      await extractTrim("input.mp4", "segment.mp4", start, segDur, !useBgm);
+      const segHasAudio = !useBgm && (await hasAudioStream("segment.mp4"));
+      progressLabel.textContent = "引き伸ばし中…";
+      await loopToTarget("segment.mp4", "fullvideo.mp4", target, segHasAudio);
+      fullVideoName = "fullvideo.mp4";
+    } else {
+      progressLabel.textContent = "冒頭とループ区間を抜き出し中…";
+      await extractTrim("input.mp4", "intro.mp4", 0, introDur, !useBgm);
+      await extractTrim("input.mp4", "segment.mp4", start, segDur, !useBgm);
+      const segHasAudio = !useBgm && (await hasAudioStream("segment.mp4"));
+      progressLabel.textContent = "引き伸ばし中…";
+      await loopToTarget("segment.mp4", "loopedportion.mp4", target - introDur, segHasAudio);
+      await ffmpeg.writeFile(
+        "concatlist.txt",
+        new TextEncoder().encode("file 'intro.mp4'\nfile 'loopedportion.mp4'\n")
+      );
+      await ffmpeg.exec(["-f", "concat", "-safe", "0", "-i", "concatlist.txt", "-c", "copy", "fullvideo.mp4"]);
+      fullVideoName = "fullvideo.mp4";
+    }
+
+    if (useBgm) {
+      progressLabel.textContent = "BGMを重ねています…";
+      const bgmData = bgmName === "custom"
+        ? await fetchFile(customBgmFile)
+        : await fetchFile(`bgm/${bgmName}.mp3`);
       await ffmpeg.writeFile("bgm.mp3", bgmData);
       await ffmpeg.exec([
-        "-stream_loop", "-1", "-i", "segment.mp4",
+        "-i", fullVideoName,
         "-stream_loop", "-1", "-i", "bgm.mp3",
         "-t", String(target),
         "-map", "0:v", "-map", "1:a",
@@ -577,11 +647,7 @@ combineBtn.addEventListener("click", async () => {
         "output.mp4",
       ]);
     } else {
-      const segHasAudio = await hasAudioStream("segment.mp4");
-      const args = ["-stream_loop", "-1", "-i", "segment.mp4", "-t", String(target), "-map", "0:v"];
-      if (segHasAudio) args.push("-map", "0:a");
-      args.push("-c", "copy", "output.mp4");
-      await ffmpeg.exec(args);
+      await ffmpeg.exec(["-i", fullVideoName, "-c", "copy", "output.mp4"]);
     }
 
     const outData = await ffmpeg.readFile("output.mp4");
