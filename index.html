@@ -395,6 +395,10 @@
           </label>
         </div>
         <p class="bgm-hint">BGMを選ぶと、元の音声は削除されBGMに差し替わります（BGMも引き伸ばし後の長さに合わせてループ再生されます）</p>
+        <label class="bgm-option" style="margin-top: 8px;">
+          <input type="checkbox" id="noLoopBgmToggle" />
+          <span>BGMをループさせない（1回再生のみ、余った尺は無音）</span>
+        </label>
       </div>
 
       <button class="primary" id="combineBtn">引き伸ばす</button>
@@ -445,6 +449,7 @@ const segLabel = document.getElementById("segLabel");
 const targetInput = document.getElementById("targetInput");
 const keepIntroToggle = document.getElementById("keepIntroToggle");
 const keepOutroToggle = document.getElementById("keepOutroToggle");
+const noLoopBgmToggle = document.getElementById("noLoopBgmToggle");
 const combineBtn = document.getElementById("combineBtn");
 const progressWrap = document.getElementById("progressWrap");
 const progressBar = document.getElementById("progressBar");
@@ -710,9 +715,10 @@ combineBtn.addEventListener("click", async () => {
         ? await fetchFile(customBgmFile)
         : await fetchFile(`bgm/${bgmName}.mp3`);
       await ffmpeg.writeFile("bgm.mp3", bgmData);
+      const bgmLoopArgs = noLoopBgmToggle.checked ? [] : ["-stream_loop", "-1"];
       await ffmpeg.exec([
         "-i", fullVideoName,
-        "-stream_loop", "-1", "-i", "bgm.mp3",
+        ...bgmLoopArgs, "-i", "bgm.mp3",
         "-t", String(target),
         "-map", "0:v", "-map", "1:a",
         "-c:v", "copy",
