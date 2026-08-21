@@ -69,6 +69,31 @@
     display: block;
   }
 
+  .frame-compare {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+  }
+  .frame-box {
+    flex: 1;
+    min-width: 0;
+  }
+  .frame-box video {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: contain;
+    border-radius: 10px;
+    background: #000;
+    display: block;
+  }
+  .frame-box span {
+    display: block;
+    text-align: center;
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
   .dual-range {
     position: relative;
     height: 32px;
@@ -301,6 +326,17 @@
     <div class="preview-wrap" id="previewWrap">
       <video id="previewVideo" muted playsinline></video>
 
+      <div class="frame-compare">
+        <div class="frame-box">
+          <video id="startFrameVideo" muted playsinline></video>
+          <span>始点</span>
+        </div>
+        <div class="frame-box">
+          <video id="endFrameVideo" muted playsinline></video>
+          <span>終点（ここから始点へ繋がる）</span>
+        </div>
+      </div>
+
       <div class="dual-range">
         <div class="track"></div>
         <div class="fill" id="rangeFill"></div>
@@ -394,6 +430,8 @@ import { fetchFile, toBlobURL } from "https://esm.sh/@ffmpeg/util@0.12.1";
 const fileInput = document.getElementById("fileInput");
 const previewWrap = document.getElementById("previewWrap");
 const previewVideo = document.getElementById("previewVideo");
+const startFrameVideo = document.getElementById("startFrameVideo");
+const endFrameVideo = document.getElementById("endFrameVideo");
 const rangeStart = document.getElementById("rangeStart");
 const rangeEnd = document.getElementById("rangeEnd");
 const rangeFill = document.getElementById("rangeFill");
@@ -448,6 +486,7 @@ rangeStart.addEventListener("input", () => {
     rangeStart.value = Math.max(0, Number(rangeEnd.value) - 0.5);
   }
   previewVideo.currentTime = Number(rangeStart.value);
+  startFrameVideo.currentTime = Number(rangeStart.value);
   updateRangeUI();
 });
 rangeEnd.addEventListener("input", () => {
@@ -455,6 +494,7 @@ rangeEnd.addEventListener("input", () => {
     rangeEnd.value = Math.min(Number(rangeEnd.max), Number(rangeStart.value) + 0.5);
   }
   previewVideo.currentTime = Number(rangeEnd.value);
+  endFrameVideo.currentTime = Number(rangeEnd.value);
   updateRangeUI();
 });
 
@@ -464,6 +504,8 @@ fileInput.addEventListener("change", () => {
   sourceFile = file;
   const url = URL.createObjectURL(file);
   previewVideo.src = url;
+  startFrameVideo.src = url;
+  endFrameVideo.src = url;
   previewVideo.addEventListener(
     "loadedmetadata",
     () => {
@@ -473,6 +515,8 @@ fileInput.addEventListener("change", () => {
       rangeStart.value = 0;
       rangeEnd.value = dur;
       updateRangeUI();
+      startFrameVideo.currentTime = 0;
+      endFrameVideo.currentTime = dur;
       previewWrap.classList.add("active");
     },
     { once: true }
