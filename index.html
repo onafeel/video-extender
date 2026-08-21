@@ -353,6 +353,10 @@
         <input type="checkbox" id="keepIntroToggle" />
         <span>冒頭（0秒〜区間開始）を残す（ループさせず先頭に1回だけ使う）</span>
       </label>
+      <label class="bgm-option" style="margin-top: 6px;">
+        <input type="checkbox" id="keepOutroToggle" />
+        <span>末尾（区間終了〜動画末尾）を残す（ループさせず最後に1回だけ使う）</span>
+      </label>
 
       <div class="target-picker">
         <label for="targetInput">引き伸ばし後の長さ</label>
@@ -440,6 +444,7 @@ const endLabel = document.getElementById("endLabel");
 const segLabel = document.getElementById("segLabel");
 const targetInput = document.getElementById("targetInput");
 const keepIntroToggle = document.getElementById("keepIntroToggle");
+const keepOutroToggle = document.getElementById("keepOutroToggle");
 const combineBtn = document.getElementById("combineBtn");
 const progressWrap = document.getElementById("progressWrap");
 const progressBar = document.getElementById("progressBar");
@@ -613,14 +618,28 @@ async function loopToTarget(srcName, outName, dur, withAudio) {
   await ffmpeg.exec(args);
 }
 
+// concatenates same-codec files (via ffmpeg's concat demuxer) into one, plain copy if just one part
+async function concatParts(names, outName) {
+  if (names.length === 1) {
+    await ffmpeg.exec(["-i", names[0], "-c", "copy", outName]);
+    return;
+  }
+  const list = names.map((n) => `file '${n}'`).join("\n") + "\n";
+  await ffmpeg.writeFile("concatlist.txt", new TextEncoder().encode(list));
+  await ffmpeg.exec(["-f", "concat", "-safe", "0", "-i", "concatlist.txt", "-c", "copy", outName]);
+}
+
 combineBtn.addEventListener("click", async () => {
   const start = Math.min(Number(rangeStart.value), Number(rangeEnd.value));
   const end = Math.max(Number(rangeStart.value), Number(rangeEnd.value));
   const segDur = end - start;
+  const sourceDuration = Number(rangeEnd.max) || 0;
   const target = Math.max(1, Math.floor(Number(targetInput.value) || 0));
   const bgmName = document.querySelector('input[name="bgm"]:checked').value || null;
-  const keepIntro = keepIntroToggle.checked;
-  const introDur = keepIntro ? start : 0;
+  const hasIntro = keepIntroToggle.checked && start > 0.05;
+  const hasOutro = keepOutroToggle.checked && sourceDuration - end > 0.05;
+  const introDur = hasIntro ? start : 0;
+  const outroDur = hasOutro ? sourceDuration - end : 0;
 
   if (segDur < 0.5) {
     setStatus("区間が短すぎます（0.5秒以上にしてください）", true);
@@ -646,32 +665,42 @@ combineBtn.addEventListener("click", async () => {
     await ffmpeg.writeFile("input.mp4", data);
 
     const useBgm = !!bgmName;
+    const withAudio = !useBgm;
+    const loopTarget = target - introDur - outroDur;
     let fullVideoName;
 
-    if (keepIntro && introDur >= target) {
-      // intro alone already covers (or exceeds) the target length
-      progressLabel.textContent = "書き出し中…";
-      await extractTrim("input.mp4", "fullvideo.mp4", 0, target, !useBgm);
-      fullVideoName = "fullvideo.mp4";
-    } else if (!keepIntro) {
+    if (loopTarget > 0.05) {
       progressLabel.textContent = "区間を抜き出し中…";
-      await extractTrim("input.mp4", "segment.mp4", start, segDur, !useBgm);
-      const segHasAudio = !useBgm && (await hasAudioStream("segment.mp4"));
+      const parts = [];
+      if (hasIntro) {
+        await extractTrim("input.mp4", "intro.mp4", 0, introDur, withAudio);
+        parts.push("intro.mp4");
+      }
+      await extractTrim("input.mp4", "segment.mp4", start, segDur, withAudio);
+      const segHasAudio = withAudio && (await hasAudioStream("segment.mp4"));
       progressLabel.textContent = "引き伸ばし中…";
-      await loopToTarget("segment.mp4", "fullvideo.mp4", target, segHasAudio);
+      await loopToTarget("segment.mp4", "loopedportion.mp4", loopTarget, segHasAudio);
+      parts.push("loopedportion.mp4");
+      if (hasOutro) {
+        await extractTrim("input.mp4", "outro.mp4", end, outroDur, withAudio);
+        parts.push("outro.mp4");
+      }
+      await concatParts(parts, "fullvideo.mp4");
       fullVideoName = "fullvideo.mp4";
     } else {
-      progressLabel.textContent = "冒頭とループ区間を抜き出し中…";
-      await extractTrim("input.mp4", "intro.mp4", 0, introDur, !useBgm);
-      await extractTrim("input.mp4", "segment.mp4", start, segDur, !useBgm);
-      const segHasAudio = !useBgm && (await hasAudioStream("segment.mp4"));
-      progressLabel.textContent = "引き伸ばし中…";
-      await loopToTarget("segment.mp4", "loopedportion.mp4", target - introDur, segHasAudio);
-      await ffmpeg.writeFile(
-        "concatlist.txt",
-        new TextEncoder().encode("file 'intro.mp4'\nfile 'loopedportion.mp4'\n")
-      );
-      await ffmpeg.exec(["-f", "concat", "-safe", "0", "-i", "concatlist.txt", "-c", "copy", "fullvideo.mp4"]);
+      // intro + outro alone already cover (or exceed) the target length; no room to loop
+      progressLabel.textContent = "書き出し中…";
+      const parts = [];
+      if (hasIntro) {
+        await extractTrim("input.mp4", "intro.mp4", 0, introDur, withAudio);
+        parts.push("intro.mp4");
+      }
+      if (hasOutro) {
+        await extractTrim("input.mp4", "outro.mp4", end, outroDur, withAudio);
+        parts.push("outro.mp4");
+      }
+      await concatParts(parts, "stitched.mp4");
+      await ffmpeg.exec(["-i", "stitched.mp4", "-t", String(target), "-c", "copy", "fullvideo.mp4"]);
       fullVideoName = "fullvideo.mp4";
     }
 
