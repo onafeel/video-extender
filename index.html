@@ -39,6 +39,29 @@
   h1 { font-size: 22px; margin: 0 0 4px; }
   .sub { color: var(--muted); font-size: 14px; margin: 0 0 24px; }
 
+  .app-nav {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .app-nav a {
+    flex: 1;
+    text-align: center;
+    padding: 10px;
+    border-radius: 10px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .app-nav a.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
   .card {
     background: var(--card);
     border-radius: 16px;
@@ -312,6 +335,10 @@
 </head>
 <body>
 <div class="wrap">
+  <div class="app-nav">
+    <a href="index.html" class="active">引き伸ばし</a>
+    <a href="trim.html">切り抜き</a>
+  </div>
   <h1>動画引き伸ばしアプリ</h1>
   <p class="sub">短い動画の一部区間をループさせて、好きな長さまで引き伸ばします。BGMも付けられます。すべての処理はブラウザ内で完結し、動画はどこにも送信されません。</p>
 
