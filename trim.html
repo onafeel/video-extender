@@ -155,6 +155,20 @@
     text-align: right;
   }
 
+  .crop-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .crop-option input { accent-color: var(--accent); }
+
   button.primary {
     width: 100%;
     padding: 14px;
@@ -269,6 +283,11 @@
         </div>
       </div>
 
+      <label class="crop-option">
+        <input type="checkbox" id="crop916Toggle" />
+        <span>9:16に切り抜く（中央基準で左右をカット、余白なし）</span>
+      </label>
+
       <button class="primary" id="cutBtn">切り抜く</button>
     </div>
 
@@ -305,6 +324,7 @@ const startFrameVideo = document.getElementById("startFrameVideo");
 const startFrameLabel = document.getElementById("startFrameLabel");
 const startRange = document.getElementById("startRange");
 const durationInput = document.getElementById("durationInput");
+const crop916Toggle = document.getElementById("crop916Toggle");
 const cutBtn = document.getElementById("cutBtn");
 const progressWrap = document.getElementById("progressWrap");
 const progressBar = document.getElementById("progressBar");
@@ -318,6 +338,8 @@ const downloadLink = document.getElementById("downloadLink");
 
 let sourceFile = null;
 let sourceDuration = 0;
+let sourceWidth = 0;
+let sourceHeight = 0;
 let ffmpeg = null;
 let ffmpegLoaded = false;
 
@@ -348,6 +370,8 @@ fileInput.addEventListener("change", () => {
     "loadedmetadata",
     () => {
       sourceDuration = previewVideo.duration;
+      sourceWidth = previewVideo.videoWidth;
+      sourceHeight = previewVideo.videoHeight;
       startRange.max = sourceDuration;
       startRange.value = 0;
       startFrameVideo.currentTime = 0;
@@ -406,14 +430,19 @@ cutBtn.addEventListener("click", async () => {
 
     const data = await fetchFile(sourceFile);
     await ffmpeg.writeFile("input.mp4", data);
-    await ffmpeg.exec([
-      "-ss", String(start),
-      "-t", String(dur),
-      "-i", "input.mp4",
+
+    const args = ["-ss", String(start), "-t", String(dur), "-i", "input.mp4"];
+    if (crop916Toggle.checked) {
+      // center crop to 9:16, width rounded to an even number for libx264
+      const cropW = Math.floor(Math.min(sourceWidth, (sourceHeight * 9) / 16) / 2) * 2;
+      args.push("-vf", `crop=${cropW}:${sourceHeight}`);
+    }
+    args.push(
       "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
       "-c:a", "aac", "-b:a", "160k",
-      "output.mp4",
-    ]);
+      "output.mp4"
+    );
+    await ffmpeg.exec(args);
 
     const outData = await ffmpeg.readFile("output.mp4");
     const blob = new Blob([outData.buffer], { type: "video/mp4" });
